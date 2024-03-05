@@ -1,0 +1,11 @@
+{
+    "name": "mtmine64",
+    "vendor": "gtrxAC",
+    "app_name_multilang": ["mtmine64", "mtmine64", "mtmine64"],
+    "description": "",
+    "version": 1,
+
+    "required_ram": 60,
+    "imsi": "",
+    "run_in_background": 0
+}
