@@ -207,30 +207,62 @@ void movePlayer(int dX, int dY) {
 }
 
 // Gives an item to the player. Returns 1 if succeeded, 0 if failed (inventory full).
-int giveItem(int id) {
-	// Try to add item to existing slot with that item
-	for (int s = 0; s < 32; s++) {
-		if (player.items[s].id == id && player.items[s].count > 0 && player.items[s].count < 99) {
-			player.items[s].count++;
-			return 1;
-		}
-	}
+// If dry is 1, it only checks if the player has enough space for the item.
+int giveItem(int id, int count, int dry) {
+	// Make a new inventory where the item will be added. If adding the item fails
+	// at any point (inventory fills up), we simply discard the new inventory.
+	InventoryItem newItems[32];
+	memcpy(&newItems, &player.items, sizeof(newItems));
 
-	// If that didn't work, try to add item to any empty slot
-	for (int s = 0; s < 32; s++) {
-		if (player.items[s].count < 1) {
-			player.items[s].id = id;
-			player.items[s].count = 1;
-
-			// If player's selected slot is empty, switch to the newly filled slot
-			if (player.items[player.selectedItem].count < 1) {
-				player.selectedItem = s;
+	for (int i = 0; i < count; i++) {
+		// Try to add item to existing slot with that item
+		for (int s = 0; s < 32; s++) {
+			if (newItems[s].id == id && newItems[s].count > 0 && newItems[s].count < 99) {
+				newItems[s].count++;
+				continue;
 			}
-			return 1;
 		}
+
+		// If that didn't work, try to add item to any empty slot
+		for (int s = 0; s < 32; s++) {
+			if (newItems[s].count < 1) {
+				newItems[s].id = id;
+				newItems[s].count = 1;
+
+				// If player's selected slot is empty, switch to the newly filled slot
+				if (newItems[player.selectedItem].count < 1) {
+					player.selectedItem = s;
+				}
+				continue;
+			}
+		}
+
+		// Inventory is full
+		return 0;
 	}
 
-	return 0;
+	// Adding the item succeeded, copy the new inventory to the player's inventory
+	if (!dry) memcpy(&player.items, &newItems, sizeof(newItems));
+	return 1;
+}
+
+// Removes an item from the player's inventory. Works similarly to giveItem.
+int takeItem(int id, int count, int dry) {
+	InventoryItem newItems[32];
+	memcpy(&newItems, &player.items, sizeof(newItems));
+
+	for (int i = 0; i < count; i++) {
+		for (int s = 0; s < 32; s++) {
+			if (newItems[s].id == id && newItems[s].count > 0) {
+				if (!dry) newItems[s].count--;
+				continue;
+			}
+		}
+		return 0;
+	}
+	
+	if (!dry) memcpy(&player.items, &newItems, sizeof(newItems));
+	return 1;
 }
 
 // Places or removes a block in the specified direction (delta X/Y).
@@ -242,7 +274,8 @@ void placeBlock(int dX, int dY) {
 
 	Block old_block = getBlock(newX, newY);
 	if (old_block.foreground) {
-		if (!giveItem(old_block.foreground)) return;
+		BlockInfo info = fgBlocks[old_block.foreground - 1];
+		if (!giveItem(info.dropItem, info.dropItemCount, 0)) return;
 		setBlock(newX, newY, (Block) {old_block.background, 0});
 	} else {
 		if (player.items[player.selectedItem].count > 0) {
@@ -297,6 +330,11 @@ void handle_keyevt_inventory(VMINT keycode) {
 
 		case VM_KEY_OK: player.selectedItem = inventoryY*8 + inventoryX; // fall through
 		case VM_KEY_RIGHT_SOFTKEY: setState(ST_INGAME); break;
+
+		case VM_KEY_LEFT_SOFTKEY: {
+			if (takeItem(6, 16, 0)) giveItem(7, 1, 0);
+			break;
+		}
 	}
 	handle_sysevt(VM_MSG_PAINT, 0);
 }
@@ -322,6 +360,7 @@ void drawInventory() {
 		color.vm_color_565 = VM_COLOR_BLACK;
 		vm_graphic_setcolor(&color);
 		vm_graphic_textout_to_layer(layer_hdl, 200, 300, u"Back", 255);
+		if (takeItem(6, 16, 1)) vm_graphic_textout_to_layer(layer_hdl, 3, 300, u"Workbench", 255);
 	}
 }
 

@@ -11,6 +11,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 // Defines
 #define SCREEN_WIDTH 240
@@ -67,7 +68,9 @@ typedef struct Image {
 
 // Image data used to draw a block (2bpp image paired with a palette).
 // Some blocks reuse the same image but with a different palette.
-typedef struct BlockImage {
+typedef struct BlockInfo {
     Image *image;
     char paletteIndex;
-} BlockImage;
+    char dropItem;
+    char dropItemCount;
+} BlockInfo;
