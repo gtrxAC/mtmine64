@@ -35,7 +35,8 @@ typedef enum Direction {
 // Game state, i.e. currently visible screen/menu
 typedef enum State {
     ST_INGAME,
-    ST_INVENTORY
+    ST_INVENTORY,
+    ST_CRAFTING
 } State;
 
 typedef struct InventoryItem {

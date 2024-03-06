@@ -24,6 +24,8 @@ Player player;
 int inventoryX;
 int inventoryY;
 
+void handle_sysevt(VMINT message, VMINT param);
+
 void setState(State newState) {
 	state = newState;
 	switch (state) {
@@ -33,6 +35,7 @@ void setState(State newState) {
 			break;
 		}
 	}
+	handle_sysevt(VM_MSG_PAINT, 0); 
 }
 
 void drawImage(Image *img, short palette[3], int x, int y) {
@@ -165,6 +168,18 @@ void drawInventoryItem(InventoryItem item, int x, int y) {
 	vm_graphic_textout_to_layer(layer_hdl, x + 2, y + 26, itemCountUcs, 255);
 }
 
+int haveAdjacentBlock(int id) {
+	for (int y = -1; y < 2; y++) {
+		for (int x = -1; x < 2; x++) {
+			if (x == 0 && y == 0) continue;
+			if (getBlock(player.x + x, player.y + y).foreground == id) {
+				return 1;
+			}
+		}
+	}
+	return 0;
+}
+
 void drawHUD() {
 	const InventoryItem selItem = player.items[player.selectedItem];
 
@@ -175,6 +190,14 @@ void drawHUD() {
 	color.vm_color_565 = VM_COLOR_WHITE;
 	vm_graphic_setcolor(&color);
 	vm_graphic_fill_rect_ex(layer_hdl, 0, 276, 34, 44);
+
+	// If player is next to a workbench, draw the softkey for opening the crafting menu
+	if (haveAdjacentBlock(7)) {
+		vm_graphic_fill_rect_ex(layer_hdl, 190, 297, 50, 23);
+		color.vm_color_565 = VM_COLOR_BLACK;
+		vm_graphic_setcolor(&color);
+		vm_graphic_textout_to_layer(layer_hdl, 193, 300, u"Craft", 255);
+	}
 
 	// Draw selected item
 	if (selItem.count < 1) return;
@@ -206,6 +229,33 @@ void movePlayer(int dX, int dY) {
 	drawWorld();
 }
 
+int giveOneItem(InventoryItem *newItems, int id) {
+	// Try to add item to existing slot with that item
+	for (int s = 0; s < 32; s++) {
+		if (newItems[s].id == id && newItems[s].count > 0 && newItems[s].count < 99) {
+			newItems[s].count++;
+			return 1;
+		}
+	}
+
+	// If that didn't work, try to add item to any empty slot
+	for (int s = 0; s < 32; s++) {
+		if (newItems[s].count < 1) {
+			newItems[s].id = id;
+			newItems[s].count = 1;
+
+			// If player's selected slot is empty, switch to the newly filled slot
+			if (newItems[player.selectedItem].count < 1) {
+				player.selectedItem = s;
+			}
+			return 1;
+		}
+	}
+
+	// Inventory is full
+	return 0;
+}
+
 // Gives an item to the player. Returns 1 if succeeded, 0 if failed (inventory full).
 // If dry is 1, it only checks if the player has enough space for the item.
 int giveItem(int id, int count, int dry) {
@@ -215,35 +265,22 @@ int giveItem(int id, int count, int dry) {
 	memcpy(&newItems, &player.items, sizeof(newItems));
 
 	for (int i = 0; i < count; i++) {
-		// Try to add item to existing slot with that item
-		for (int s = 0; s < 32; s++) {
-			if (newItems[s].id == id && newItems[s].count > 0 && newItems[s].count < 99) {
-				newItems[s].count++;
-				continue;
-			}
-		}
-
-		// If that didn't work, try to add item to any empty slot
-		for (int s = 0; s < 32; s++) {
-			if (newItems[s].count < 1) {
-				newItems[s].id = id;
-				newItems[s].count = 1;
-
-				// If player's selected slot is empty, switch to the newly filled slot
-				if (newItems[player.selectedItem].count < 1) {
-					player.selectedItem = s;
-				}
-				continue;
-			}
-		}
-
-		// Inventory is full
-		return 0;
+		if (!giveOneItem(newItems, id)) return 0;
 	}
 
 	// Adding the item succeeded, copy the new inventory to the player's inventory
 	if (!dry) memcpy(&player.items, &newItems, sizeof(newItems));
 	return 1;
+}
+
+int takeOneItem(InventoryItem *newItems, int id) {
+	for (int s = 0; s < 32; s++) {
+		if (newItems[s].id == id && newItems[s].count > 0) {
+			newItems[s].count--;
+			return 1;
+		}
+	}
+	return 0;
 }
 
 // Removes an item from the player's inventory. Works similarly to giveItem.
@@ -252,13 +289,7 @@ int takeItem(int id, int count, int dry) {
 	memcpy(&newItems, &player.items, sizeof(newItems));
 
 	for (int i = 0; i < count; i++) {
-		for (int s = 0; s < 32; s++) {
-			if (newItems[s].id == id && newItems[s].count > 0) {
-				if (!dry) newItems[s].count--;
-				continue;
-			}
-		}
-		return 0;
+		if (!takeOneItem(newItems, id)) return 0;
 	}
 	
 	if (!dry) memcpy(&player.items, &newItems, sizeof(newItems));
@@ -274,10 +305,15 @@ void placeBlock(int dX, int dY) {
 
 	Block old_block = getBlock(newX, newY);
 	if (old_block.foreground) {
+		// Block already exists, break it
 		BlockInfo info = fgBlocks[old_block.foreground - 1];
 		if (!giveItem(info.dropItem, info.dropItemCount, 0)) return;
 		setBlock(newX, newY, (Block) {old_block.background, 0});
+
+		// Fix for "Craft" softkey not disappearing when breaking a workbench
+		if (old_block.foreground == 7) drawWorld();
 	} else {
+		// Block doesn't exist, place the currently selected block (if any)
 		if (player.items[player.selectedItem].count > 0) {
 			setBlock(newX, newY, (Block) {old_block.background, player.items[player.selectedItem].id});
 			player.items[player.selectedItem].count--;
@@ -297,8 +333,6 @@ void save_world(VMINT tid) {
 	vm_file_commit(player_file);
 }
 
-void handle_sysevt(VMINT message, VMINT param);
-
 void handle_keyevt_ingame(VMINT keycode) {
 	switch (keycode) {
 		case VM_KEY_UP: movePlayer(0, -1); player.direction = DIR_NORTH; break;
@@ -315,7 +349,13 @@ void handle_keyevt_ingame(VMINT keycode) {
 		case VM_KEY_NUM8: placeBlock(0, 1); player.direction = DIR_SOUTH; break;
 		case VM_KEY_NUM9: placeBlock(1, 1); player.direction = DIR_SOUTHEAST; break;
 
-		case VM_KEY_OK: setState(ST_INVENTORY); handle_sysevt(VM_MSG_PAINT, 0); return;
+		case VM_KEY_OK: setState(ST_INVENTORY); return;
+
+		case VM_KEY_RIGHT_SOFTKEY: {
+			if (!haveAdjacentBlock(7)) break;
+			setState(ST_CRAFTING);
+			return;
+		}
 	}
 	drawPlayer();
 	vm_graphic_flush_layer(&layer_hdl, 1);
@@ -329,12 +369,19 @@ void handle_keyevt_inventory(VMINT keycode) {
 		case VM_KEY_RIGHT: if (inventoryX < 7) inventoryX++; break;
 
 		case VM_KEY_OK: player.selectedItem = inventoryY*8 + inventoryX; // fall through
-		case VM_KEY_RIGHT_SOFTKEY: setState(ST_INGAME); break;
+		case VM_KEY_RIGHT_SOFTKEY: setState(ST_INGAME); return;
 
 		case VM_KEY_LEFT_SOFTKEY: {
 			if (takeItem(6, 16, 0)) giveItem(7, 1, 0);
 			break;
 		}
+	}
+	handle_sysevt(VM_MSG_PAINT, 0);
+}
+
+void handle_keyevt_crafting(VMINT keycode) {
+	switch (keycode) {
+		case VM_KEY_RIGHT_SOFTKEY: setState(ST_INGAME); return;
 	}
 	handle_sysevt(VM_MSG_PAINT, 0);
 }
@@ -364,12 +411,26 @@ void drawInventory() {
 	}
 }
 
+void drawCrafting() {
+	// Clear background
+	color.vm_color_565 = VM_COLOR_WHITE;
+	vm_graphic_setcolor(&color);
+	vm_graphic_fill_rect_ex(layer_hdl, 0, 0, screen_width, screen_height);
+
+	color.vm_color_565 = VM_COLOR_BLACK;
+	vm_graphic_setcolor(&color);
+	vm_graphic_textout_to_layer(layer_hdl, 0, 0, u"Coming soon", 255);
+	vm_graphic_textout_to_layer(layer_hdl, 3, 300, u"Craft", 255);
+	vm_graphic_textout_to_layer(layer_hdl, 200, 300, u"Back", 255);
+}
+
 void handle_keyevt(VMINT event, VMINT keycode) {
 	if (event != VM_KEY_EVENT_DOWN && event != VM_KEY_EVENT_REPEAT) return;
 
 	switch (state) {
 		case ST_INGAME: handle_keyevt_ingame(keycode); break;
 		case ST_INVENTORY: handle_keyevt_inventory(keycode); break;
+		case ST_CRAFTING: handle_keyevt_crafting(keycode); break;
 	}
 }
 
@@ -391,6 +452,7 @@ void handle_sysevt(VMINT message, VMINT param) {
 			switch (state) {
 				case ST_INGAME: drawWorld(); drawHUD(); break;
 				case ST_INVENTORY: drawInventory(); break;
+				case ST_CRAFTING: drawCrafting(); break;
 			}
     		vm_graphic_flush_layer(&layer_hdl, 1);
 			break;
@@ -426,20 +488,20 @@ Block generateBlock(int x, int y) {
 
 	// Plains biome
     if (noiseValue < 0.1f) {
-		if (decoValue < 45) return (Block) {0, 0}; // grass
-		if (decoValue < 75) return (Block) {1, 0}; // short grass
-		if (decoValue < 90) return (Block) {2, 0}; // tall grass
-		if (decoValue < 97) return (Block) {0, 1}; // tree
+		if (decoValue < 70) return (Block) {0, 0}; // grass
+		if (decoValue < 85) return (Block) {1, 0}; // short grass
+		if (decoValue < 93) return (Block) {2, 0}; // tall grass
+		if (decoValue < 99) return (Block) {0, 1}; // tree
 		return (Block) {0, 3}; // fallen tree
     }
 
 	// Forest biome
     if (noiseValue < 0.28f) {
-		if (decoValue < 5) return (Block) {0, 0}; // grass
-		if (decoValue < 10) return (Block) {1, 0}; // short grass
-		if (decoValue < 15) return (Block) {0, 3}; // fallen tree
+		if (decoValue < 10) return (Block) {0, 0}; // grass
+		if (decoValue < 15) return (Block) {1, 0}; // short grass
+		if (decoValue < 20) return (Block) {0, 3}; // fallen tree
 		return (Block) {0, 1}; // tree
-    }
+    } 
 
 	// Snow biome
 	if (decoValue < 96) return (Block) {4, 0}; // snow
