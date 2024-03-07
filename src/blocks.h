@@ -18,13 +18,14 @@ BlockInfo bgBlocks[] = {
 };
 
 BlockInfo fgBlocks[] = {
-	{&img_tree, 0, 6, 4},
-	{&img_dead_tree, 0, 6, 2},
-	{&img_fallen_tree, 0, 6, 2},
-	{&img_cactus, 0, 4, 1},
-	{&img_rock, 1, 5, 1},
-	{&img_planks, 3, 6, 1},
-	{&img_workbench, 3, 7, 1}
+	{&img_tree, 0, 6, 4, 0},
+	{&img_dead_tree, 0, 6, 2, 0},
+	{&img_fallen_tree, 0, 6, 2, 0},
+	{&img_cactus, 0, 4, 1, 0},
+	{&img_rock, 1, 5, 1, 0},
+	{&img_planks, 3, 6, 1, 0},
+	{&img_workbench, 3, 7, 1, 0},
+	{&img_pickaxe, 3, 0, 0, 0},
 };
 
 Image *playerImages[] = {
@@ -36,4 +37,10 @@ Image *playerImages[] = {
 	&img_player_sw,
 	&img_player_w,
 	&img_player_nw,
+};
+
+Recipe recipes[] = {
+	{8, {{6, 48}, {0, 0}, {0, 0}, {0, 0}}},
+	{5, {{6, 1}, {6, 1}, {6, 1}, {6, 1}}},
+	{0}
 };

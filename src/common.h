@@ -74,4 +74,10 @@ typedef struct BlockInfo {
     char paletteIndex;
     char dropItem;
     char dropItemCount;
+    char canPlace;
 } BlockInfo;
+
+typedef struct Recipe {
+    char result;
+    InventoryItem items[4];
+} Recipe;

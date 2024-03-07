@@ -34,6 +34,12 @@ void setState(State newState) {
 			inventoryY = player.selectedItem / 8;
 			break;
 		}
+
+		case ST_CRAFTING: {
+			inventoryX = 0;
+			inventoryY = 0;
+			break;
+		}
 	}
 	handle_sysevt(VM_MSG_PAINT, 0); 
 }
@@ -381,6 +387,15 @@ void handle_keyevt_inventory(VMINT keycode) {
 
 void handle_keyevt_crafting(VMINT keycode) {
 	switch (keycode) {
+		case VM_KEY_LEFT_SOFTKEY: {
+			for (int i = 0; i < 4; i++) {
+				if (!recipes[i].items[i].id) break;
+				drawInventoryItem(recipes[i].items[i], 100 + 30*i, 0);
+				if (!takeItem()) break;
+			}
+			break;
+		}
+
 		case VM_KEY_RIGHT_SOFTKEY: setState(ST_INGAME); return;
 	}
 	handle_sysevt(VM_MSG_PAINT, 0);
@@ -417,9 +432,29 @@ void drawCrafting() {
 	vm_graphic_setcolor(&color);
 	vm_graphic_fill_rect_ex(layer_hdl, 0, 0, screen_width, screen_height);
 
+	// Draw item grid
+	int x = 0, y = 80;
+	for (int i = 0; recipes[i].result; i++) {
+		InventoryItem item = {recipes[i].result, 1};
+		drawInventoryItem(item, x, y);
+		x += 30;
+		if (x > 240) {
+			x = 1;
+			y += 43;
+		}
+	}
+
+	// Draw recipe requirements
 	color.vm_color_565 = VM_COLOR_BLACK;
 	vm_graphic_setcolor(&color);
-	vm_graphic_textout_to_layer(layer_hdl, 0, 0, u"Coming soon", 255);
+	vm_graphic_textout_to_layer(layer_hdl, 20, 10, u"Requires:", 255);
+	for (int i = 0; i < 4; i++) {
+		if (!recipes[i].items[i].id) break;
+		drawInventoryItem(recipes[i].items[i], 100 + 30*i, 0);
+	}
+
+	color.vm_color_565 = VM_COLOR_BLACK;
+	vm_graphic_setcolor(&color);
 	vm_graphic_textout_to_layer(layer_hdl, 3, 300, u"Craft", 255);
 	vm_graphic_textout_to_layer(layer_hdl, 200, 300, u"Back", 255);
 }
