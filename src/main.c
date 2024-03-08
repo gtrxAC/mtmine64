@@ -305,6 +305,7 @@ int takeItem(int id, int count, int dry) {
 // Places or removes a block in the specified direction (delta X/Y).
 // If there is already a block, it is removed. Else the currently selected block is placed.
 void placeBlock(int dX, int dY) {
+	InventoryItem selItem = player.items[player.selectedItem];
 	int newX = player.x + dX;
 	int newY = player.y + dY;
 	if (outOfBounds(newX, newY)) return;
@@ -320,8 +321,9 @@ void placeBlock(int dX, int dY) {
 		if (old_block.foreground == 7) drawWorld();
 	} else {
 		// Block doesn't exist, place the currently selected block (if any)
-		if (player.items[player.selectedItem].count > 0) {
-			setBlock(newX, newY, (Block) {old_block.background, player.items[player.selectedItem].id});
+		if (!fgBlocks[selItem.id - 1].canPlace) return;
+		if (selItem.count > 0) {
+			setBlock(newX, newY, (Block) {old_block.background, selItem.id});
 			player.items[player.selectedItem].count--;
 		}
 	}
@@ -387,12 +389,26 @@ void handle_keyevt_inventory(VMINT keycode) {
 
 void handle_keyevt_crafting(VMINT keycode) {
 	switch (keycode) {
-		case VM_KEY_LEFT_SOFTKEY: {
+		case VM_KEY_UP: if (inventoryY > 0) inventoryY--; break;
+		case VM_KEY_DOWN: if (inventoryY < 5) inventoryY++; break;
+		case VM_KEY_LEFT: if (inventoryX > 0) inventoryX--; break;
+		case VM_KEY_RIGHT: if (inventoryX < 7) inventoryX++; break;
+
+		case VM_KEY_LEFT_SOFTKEY:
+		case VM_KEY_OK: {
+			Recipe recipe = recipes[inventoryY*8 + inventoryX];
+			// Check if the player has the required items
 			for (int i = 0; i < 4; i++) {
-				if (!recipes[i].items[i].id) break;
-				drawInventoryItem(recipes[i].items[i], 100 + 30*i, 0);
-				if (!takeItem()) break;
+				InventoryItem item = recipe.items[i];
+				if (!item.id) break;
+				if (!takeItem(item.id, item.count, 1)) return;
 			}
+			// Take the required items from the player
+			for (int i = 0; i < 4; i++) {
+				InventoryItem item = recipe.items[i];
+				takeItem(item.id, item.count, 0);
+			}
+			giveItem(recipe.result.id, recipe.result.count, 0);
 			break;
 		}
 
@@ -432,30 +448,59 @@ void drawCrafting() {
 	vm_graphic_setcolor(&color);
 	vm_graphic_fill_rect_ex(layer_hdl, 0, 0, screen_width, screen_height);
 
+	// Get the amount of recipes
+	int maxRecipe = 0;
+	for (; recipes[maxRecipe].result.id; maxRecipe++) {}
+	maxRecipe--;
+
 	// Draw item grid
-	int x = 0, y = 80;
-	for (int i = 0; recipes[i].result; i++) {
-		InventoryItem item = {recipes[i].result, 1};
-		drawInventoryItem(item, x, y);
-		x += 30;
-		if (x > 240) {
-			x = 1;
-			y += 43;
+	for (int y = 0; y < 6; y++) {
+		for (int x = 0; x < 8; x++) {
+			// Tile background, also serves as a highlight for the currently selected slot
+			color.vm_color_565 = (inventoryX == x && inventoryY == y) ? 0xC658 : 0xE75C;
+			vm_graphic_setcolor(&color);
+			vm_graphic_fill_rect_ex(layer_hdl, 1 + x*30, 42 + y*43, 27, 40);
+
+			if (y*8 + x > maxRecipe) continue;
+			drawInventoryItem(recipes[y*8 + x].result, x*30, 41 + y*43);
 		}
 	}
 
 	// Draw recipe requirements
 	color.vm_color_565 = VM_COLOR_BLACK;
 	vm_graphic_setcolor(&color);
-	vm_graphic_textout_to_layer(layer_hdl, 20, 10, u"Requires:", 255);
-	for (int i = 0; i < 4; i++) {
-		if (!recipes[i].items[i].id) break;
-		drawInventoryItem(recipes[i].items[i], 100 + 30*i, 0);
+	if (inventoryY*8 + inventoryX <= maxRecipe) {
+		vm_graphic_textout_to_layer(layer_hdl, 20, 10, u"Requires:", 255);
+
+		for (int i = 0; i < 4; i++) {
+			InventoryItem item = recipes[inventoryY*8 + inventoryX].items[i];
+			if (!item.id) break;
+			drawInventoryItem(item, 95 + 30*i, 0);
+		}
 	}
 
+	int canCraft = 1;
+	for (int i = 0; i < 4; i++) {
+		InventoryItem item = recipes[inventoryY*8 + inventoryX].items[i];
+		if (!item.id) break;
+		if (!takeItem(item.id, item.count, 1)) {
+			canCraft = 0; 
+			break;
+		}
+	}
+
+	if (canCraft) {
+		color.vm_color_565 = VM_COLOR_BLACK;
+		vm_graphic_setcolor(&color);
+		vm_graphic_textout_to_layer(layer_hdl, 3, 300, u"Craft", 255);
+	} else {
+		color.vm_color_565 = VM_COLOR_RED;
+		vm_graphic_setcolor(&color);
+		vm_graphic_textout_to_layer(layer_hdl, 3, 300, u"Cannot craft", 255);
+	}
+	
 	color.vm_color_565 = VM_COLOR_BLACK;
 	vm_graphic_setcolor(&color);
-	vm_graphic_textout_to_layer(layer_hdl, 3, 300, u"Craft", 255);
 	vm_graphic_textout_to_layer(layer_hdl, 200, 300, u"Back", 255);
 }
 

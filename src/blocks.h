@@ -7,6 +7,7 @@ short palettes[][3] = {
 	{ 0x0000, 0x6180, 0xC4AC },  // 3: black, brown, skin
 };
 
+// Background blocks (generated as part of the world, cannot be placed or broken)
 BlockInfo bgBlocks[] = {
 	{&img_ground, 0, 0, 0},  // grass
 	{&img_short_grass, 0, 0, 0},
@@ -17,15 +18,21 @@ BlockInfo bgBlocks[] = {
 	{&img_water, 2, 0, 0},
 };
 
+// Items and foreground blocks
 BlockInfo fgBlocks[] = {
-	{&img_tree, 0, 6, 4, 0},
-	{&img_dead_tree, 0, 6, 2, 0},
-	{&img_fallen_tree, 0, 6, 2, 0},
-	{&img_cactus, 0, 4, 1, 0},
-	{&img_rock, 1, 5, 1, 0},
-	{&img_planks, 3, 6, 1, 0},
-	{&img_workbench, 3, 7, 1, 0},
-	{&img_pickaxe, 3, 0, 0, 0},
+	//                 .- palette
+	//                 |  .- dropped item id
+	//                 |  |   .- dropped item count  
+	// image           |  |   |  .- can be placed
+	{&img_tree,        0, 6,  4, 1},
+	{&img_dead_tree,   0, 6,  2, 1},
+	{&img_fallen_tree, 0, 6,  2, 1},
+	{&img_cactus,      0, 4,  1, 1},
+	{&img_rock,        1, 5,  1, 1},
+	{&img_planks,      3, 6,  1, 1},
+	{&img_workbench,   3, 7,  1, 1},
+	{&img_pickaxe,     3, 0,  0, 0},
+	{&img_stick,       3, 0,  0, 0},
 };
 
 Image *playerImages[] = {
@@ -40,7 +47,7 @@ Image *playerImages[] = {
 };
 
 Recipe recipes[] = {
-	{8, {{6, 48}, {0, 0}, {0, 0}, {0, 0}}},
-	{5, {{6, 1}, {6, 1}, {6, 1}, {6, 1}}},
+	{{8, 1}, {{6, 48}, {0, 0}, {0, 0}, {0, 0}}},
+	{{5, 2}, {{6, 1}, {6, 1}, {6, 1}, {6, 1}}},
 	{0}
 };

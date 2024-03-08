@@ -78,6 +78,6 @@ typedef struct BlockInfo {
 } BlockInfo;
 
 typedef struct Recipe {
-    char result;
+    InventoryItem result;
     InventoryItem items[4];
 } Recipe;
