@@ -75,6 +75,8 @@ typedef struct BlockInfo {
     char dropItem;
     char dropItemCount;
     char canPlace;
+    char requiresPickaxe;
+    char canPlaceOnWater;
 } BlockInfo;
 
 typedef struct Recipe {

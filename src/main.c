@@ -228,7 +228,10 @@ void movePlayer(int dX, int dY) {
 	int newY = player.y + dY;
 
 	if (outOfBounds(newX, newY)) return;
-	if (getBlock(newX, newY).foreground) return;
+
+	Block block = getBlock(newX, newY);
+	if (block.foreground && block.foreground != 10) return;
+	if (block.background == 6 && block.foreground != 10) return;
 
 	player.x = newX;
 	player.y = newY;
@@ -314,6 +317,7 @@ void placeBlock(int dX, int dY) {
 	if (old_block.foreground) {
 		// Block already exists, break it
 		BlockInfo info = fgBlocks[old_block.foreground - 1];
+		if (info.requiresPickaxe && player.items[player.selectedItem].id != 8) return;
 		if (!giveItem(info.dropItem, info.dropItemCount, 0)) return;
 		setBlock(newX, newY, (Block) {old_block.background, 0});
 
@@ -322,6 +326,7 @@ void placeBlock(int dX, int dY) {
 	} else {
 		// Block doesn't exist, place the currently selected block (if any)
 		if (!fgBlocks[selItem.id - 1].canPlace) return;
+		if (old_block.background == 6 && !fgBlocks[selItem.id - 1].canPlaceOnWater) return;
 		if (selItem.count > 0) {
 			setBlock(newX, newY, (Block) {old_block.background, selItem.id});
 			player.items[player.selectedItem].count--;
@@ -387,6 +392,20 @@ void handle_keyevt_inventory(VMINT keycode) {
 	handle_sysevt(VM_MSG_PAINT, 0);
 }
 
+int canCraft(Recipe recipe) {
+	InventoryItem itemsCopy[32];
+	memcpy(&itemsCopy, &player.items, sizeof(itemsCopy));
+
+	for (int i = 0; i < 4; i++) {
+		InventoryItem item = recipe.items[i];
+		if (!item.id) break;
+		for (int c = 0; c < item.count; c++) {
+			if (!takeOneItem(itemsCopy, item.id)) return 0;
+		}
+	}
+	return 1;
+}
+
 void handle_keyevt_crafting(VMINT keycode) {
 	switch (keycode) {
 		case VM_KEY_UP: if (inventoryY > 0) inventoryY--; break;
@@ -396,13 +415,10 @@ void handle_keyevt_crafting(VMINT keycode) {
 
 		case VM_KEY_LEFT_SOFTKEY:
 		case VM_KEY_OK: {
-			Recipe recipe = recipes[inventoryY*8 + inventoryX];
 			// Check if the player has the required items
-			for (int i = 0; i < 4; i++) {
-				InventoryItem item = recipe.items[i];
-				if (!item.id) break;
-				if (!takeItem(item.id, item.count, 1)) return;
-			}
+			Recipe recipe = recipes[inventoryY*8 + inventoryX];
+			if (!canCraft(recipe)) break;
+
 			// Take the required items from the player
 			for (int i = 0; i < 4; i++) {
 				InventoryItem item = recipe.items[i];
@@ -479,17 +495,7 @@ void drawCrafting() {
 		}
 	}
 
-	int canCraft = 1;
-	for (int i = 0; i < 4; i++) {
-		InventoryItem item = recipes[inventoryY*8 + inventoryX].items[i];
-		if (!item.id) break;
-		if (!takeItem(item.id, item.count, 1)) {
-			canCraft = 0; 
-			break;
-		}
-	}
-
-	if (canCraft) {
+	if (canCraft(recipes[inventoryY*8 + inventoryX])) {
 		color.vm_color_565 = VM_COLOR_BLACK;
 		vm_graphic_setcolor(&color);
 		vm_graphic_textout_to_layer(layer_hdl, 3, 300, u"Craft", 255);
@@ -592,6 +598,11 @@ Block generateBlock(int x, int y) {
 void vm_main(void) {
 	int unused;
 
+	// Seed RNG
+	VMUINT utc;
+	vm_get_curr_utc(&utc);
+	srand(utc);
+
 	vm_file_mkdir(u"e:\\mtmine64\\");
 	if (vm_file_get_attributes(u"e:\\mtmine64\\world.bin") < 0) {
 		// World doesn't exist, initialize and generate it
@@ -600,11 +611,21 @@ void vm_main(void) {
 		fnlState = fnlCreateState();
     	fnlState.octaves = 1;
 		fnlState.noise_type = FNL_NOISE_PERLIN;
+		fnlState.seed = utc;
 
 		for (int i = 0; i < WORLD_WIDTH*WORLD_HEIGHT; i++) {
 			Block block = generateBlock(i%WORLD_WIDTH, i/WORLD_HEIGHT);
 			vm_file_write(world_file, &block, sizeof(Block), &unused);
 		}
+
+		// Put the player on an unoccupied space near the middle of the map
+		player.x = 128;
+		player.y = 128;
+		while (getBlock(player.x, player.y).background == 6 || getBlock(player.x, player.y).foreground) {
+			player.x += rand()%3 - 1;
+			player.y += rand()%3 - 1;
+		}
+
 		save_world(0);
 	} else {
 		// World exists, load it
