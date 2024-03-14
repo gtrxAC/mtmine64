@@ -83,8 +83,8 @@ int outOfBounds(int x, int y) {
 // Gets the block at the given coordinates.
 // This directly reads from the world file (or its cache) without performing any
 // checks; those checks should be performed by the caller function.
-Block getBlock(int x, int y) {
-	int index = y*WORLD_WIDTH + x;
+Block getBlock(int dimension, int x, int y) {
+	int index = dimension*WORLD_WIDTH*WORLD_HEIGHT + y*WORLD_WIDTH + x;
 
 	// If this block is not in cache, refill the cache with this block and some to the right of it
 	if (index < blockCacheIndex || index > blockCacheIndex + 15) {
@@ -99,8 +99,8 @@ Block getBlock(int x, int y) {
 
 // Sets the block at the given coordinates.
 // This directly writes to the world file without performing any checks.
-void setBlock(int x, int y, Block block) {
-	int index = y*WORLD_WIDTH + x;
+void setBlock(int dimension, int x, int y, Block block) {
+	int index = dimension*WORLD_WIDTH*WORLD_HEIGHT + y*WORLD_WIDTH + x;
 	int unused;
 	vm_file_seek(world_file, index*sizeof(Block), BASE_BEGIN);
 	vm_file_write(world_file, (void *)&block, sizeof(Block), &unused);

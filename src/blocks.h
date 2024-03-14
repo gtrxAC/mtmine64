@@ -37,6 +37,7 @@ BlockInfo fgBlocks[] = {
 	{&img_pickaxe,     3, 0,  0, 0, 0, 0},
 	{&img_stick,       3, 0,  0, 0, 0, 0},
 	{&img_bridge,      4, 10, 1, 1, 1, 1},
+	{&img_hole,        3, 0,  0, 0, 0, 0},
 };
 
 Image *playerImages[] = {

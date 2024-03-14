@@ -48,7 +48,7 @@ typedef struct InventoryItem {
 typedef struct Player {
     int x;
     int y;
-    int depth;
+    int dimension;
     Direction direction;
 
     InventoryItem items[32];
