@@ -83,8 +83,8 @@ int outOfBounds(int x, int y) {
 // Gets the block at the given coordinates.
 // This directly reads from the world file (or its cache) without performing any
 // checks; those checks should be performed by the caller function.
-Block getBlock(int dimension, int x, int y) {
-	int index = dimension*WORLD_WIDTH*WORLD_HEIGHT + y*WORLD_WIDTH + x;
+Block getBlock(int x, int y) {
+	int index = player.dimension*WORLD_WIDTH*WORLD_HEIGHT + y*WORLD_WIDTH + x;
 
 	// If this block is not in cache, refill the cache with this block and some to the right of it
 	if (index < blockCacheIndex || index > blockCacheIndex + 15) {
@@ -99,8 +99,8 @@ Block getBlock(int dimension, int x, int y) {
 
 // Sets the block at the given coordinates.
 // This directly writes to the world file without performing any checks.
-void setBlock(int dimension, int x, int y, Block block) {
-	int index = dimension*WORLD_WIDTH*WORLD_HEIGHT + y*WORLD_WIDTH + x;
+void setBlock(int x, int y, Block block) {
+	int index = player.dimension*WORLD_WIDTH*WORLD_HEIGHT + y*WORLD_WIDTH + x;
 	int unused;
 	vm_file_seek(world_file, index*sizeof(Block), BASE_BEGIN);
 	vm_file_write(world_file, (void *)&block, sizeof(Block), &unused);
@@ -127,7 +127,13 @@ void drawBlock(int x, int y) {
 	vm_graphic_fill_rect_ex(layer_hdl, screenX, screenY, BLOCK_WIDTH - 1, BLOCK_HEIGHT - 1);
 
 	Block block;
-	if (outOfBounds(x, y)) block = (Block) {6, 0}; // water
+	if (outOfBounds(x, y)) {
+		if (player.dimension == 0) {
+			block = (Block) {6, 0}; // water
+		} else {
+			block = (Block) {7, 12}; // stone
+		}
+	}
 	else block = getBlock(x, y);
 
 	drawImage(
@@ -230,11 +236,13 @@ void movePlayer(int dX, int dY) {
 	if (outOfBounds(newX, newY)) return;
 
 	Block block = getBlock(newX, newY);
-	if (block.foreground && block.foreground != 10) return;
+	if (block.foreground && !fgBlocks[block.foreground - 1].canStepOn) return;
 	if (block.background == 6 && block.foreground != 10) return;
 
 	player.x = newX;
 	player.y = newY;
+	if (block.foreground == 11) player.dimension = 1;
+	else if (block.foreground == 13) player.dimension = 0;
 	drawWorld();
 }
 
@@ -315,21 +323,39 @@ void placeBlock(int dX, int dY) {
 
 	Block old_block = getBlock(newX, newY);
 	if (old_block.foreground) {
+		// Ladders cannot be broken (directly)
+		if (old_block.foreground == 13) return;
+
 		// Block already exists, break it
 		BlockInfo info = fgBlocks[old_block.foreground - 1];
 		if (info.requiresPickaxe && player.items[player.selectedItem].id != 8) return;
 		if (!giveItem(info.dropItem, info.dropItemCount, 0)) return;
 		setBlock(newX, newY, (Block) {old_block.background, 0});
 
+		// If a hole is broken, remove the corresponding ladder from the cave dimension
+		if (old_block.foreground == 11) {
+			player.dimension = 1;
+			setBlock(newX, newY, (Block) {7, 0});
+			player.dimension = 0;
+		}
+
 		// Fix for "Craft" softkey not disappearing when breaking a workbench
 		if (old_block.foreground == 7) drawWorld();
 	} else {
-		// Block doesn't exist, place the currently selected block (if any)
-		if (!fgBlocks[selItem.id - 1].canPlace) return;
-		if (old_block.background == 6 && !fgBlocks[selItem.id - 1].canPlaceOnWater) return;
-		if (selItem.count > 0) {
-			setBlock(newX, newY, (Block) {old_block.background, selItem.id});
-			player.items[player.selectedItem].count--;
+		// If pickaxe is selected and we're pointing at a ground block, make a hole
+		if (player.dimension == 0 && selItem.id == 8 && old_block.background != 6) {
+			setBlock(newX, newY, (Block) {old_block.background, 11});
+			player.dimension = 1;
+			setBlock(newX, newY, (Block) {7, 13});
+			player.dimension = 0;
+		} else {
+			// Block doesn't exist, place the currently selected block (if any)
+			if (!fgBlocks[selItem.id - 1].canPlace) return;
+			if (old_block.background == 6 && !fgBlocks[selItem.id - 1].canPlaceOnWater) return;
+			if (selItem.count > 0) {
+				setBlock(newX, newY, (Block) {old_block.background, selItem.id});
+				player.items[player.selectedItem].count--;
+			}
 		}
 	}
 	drawBlock(newX, newY);
@@ -361,6 +387,8 @@ void handle_keyevt_ingame(VMINT keycode) {
 		case VM_KEY_NUM7: placeBlock(-1, 1); player.direction = DIR_SOUTHWEST; break;
 		case VM_KEY_NUM8: placeBlock(0, 1); player.direction = DIR_SOUTH; break;
 		case VM_KEY_NUM9: placeBlock(1, 1); player.direction = DIR_SOUTHEAST; break;
+
+		case VM_KEY_NUM5: movePlayer(0, 0); break;
 
 		case VM_KEY_OK: setState(ST_INVENTORY); return;
 
@@ -554,7 +582,7 @@ void handle_sysevt(VMINT message, VMINT param) {
 	}
 }
 
-Block generateBlock(int x, int y) {
+Block generateBlockOverworld(int x, int y) {
 	// Rivers
     fnlState.frequency = 0.03f;
     fnlState.fractal_type = FNL_FRACTAL_RIDGED;
@@ -595,6 +623,22 @@ Block generateBlock(int x, int y) {
 	return (Block) {4, 3}; // fallen tree
 }
 
+Block generateBlockCave(int x, int y) {
+    fnlState.frequency = 0.08f;
+    fnlState.fractal_type = FNL_FRACTAL_RIDGED;
+    fnlState.octaves = 1;
+    float riverValue = fnlGetNoise2D(&fnlState, x, y);
+
+	if (riverValue > 0.65f) {
+        return (Block) {7, 0};
+	}
+
+	int decoValue = rand()%100;
+
+	if (decoValue < 2) return (Block) {7, 14}; // coal ore
+    return (Block) {7, 12};
+}
+
 void vm_main(void) {
 	int unused;
 
@@ -614,7 +658,12 @@ void vm_main(void) {
 		fnlState.seed = utc;
 
 		for (int i = 0; i < WORLD_WIDTH*WORLD_HEIGHT; i++) {
-			Block block = generateBlock(i%WORLD_WIDTH, i/WORLD_HEIGHT);
+			Block block = generateBlockOverworld(i%WORLD_WIDTH, i/WORLD_HEIGHT);
+			vm_file_write(world_file, &block, sizeof(Block), &unused);
+		}
+
+		for (int i = WORLD_WIDTH*WORLD_HEIGHT; i < WORLD_WIDTH*WORLD_HEIGHT*2; i++) {
+			Block block = generateBlockCave(i%WORLD_WIDTH, i/WORLD_HEIGHT);
 			vm_file_write(world_file, &block, sizeof(Block), &unused);
 		}
 
